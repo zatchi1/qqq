@@ -17,8 +17,8 @@ final class SoundEngine {
     private volatile boolean ready = false;
     private boolean muted = false;
     private boolean paused = false;
-    private float musicVol = 0.55f;
-    private float sfxVol = 0.9f;
+    private float musicVol = 0.35f;
+    private float sfxVol = 1.0f;
     private float duck = 1f;
 
     /** Builds everything on a background thread so start-up stays instant. */
@@ -31,8 +31,8 @@ final class SoundEngine {
     private void build() {
         try {
             Map<String, AudioTrack> tmp = new HashMap<>();
-            tmp.put("click", track(Synth.click(), false));
-            tmp.put("op", track(Synth.operator(), false));
+            for (int i = 0; i < 3; i++) tmp.put("click" + i, track(Synth.click(i), false));
+            for (int i = 0; i < 2; i++) tmp.put("op" + i, track(Synth.operator(i), false));
             tmp.put("func", track(Synth.func(), false));
             tmp.put("equals", track(Synth.equals(), false));
             tmp.put("error", track(Synth.error(), false));
@@ -41,13 +41,7 @@ final class SoundEngine {
             AudioTrack m = track(Synth.music(), true);
             synchronized (this) {
                 sfx.putAll(tmp);
-                gains.put("click", 0.8f);
-                gains.put("op", 0.8f);
-                gains.put("func", 0.8f);
-                gains.put("equals", 0.9f);
-                gains.put("error", 0.9f);
-                gains.put("slice", 1f);
-                gains.put("elim", 1f);
+                for (String n : tmp.keySet()) gains.put(n, 1f);
                 music = m;
                 ready = true;
                 applyVolumes();
@@ -91,8 +85,17 @@ final class SoundEngine {
         } catch (Exception ignored) { }
     }
 
+    private int variant = 0;
+
+    /** "click" and "op" pick one of several recorded-style variants, round robin. */
     synchronized void play(String name) {
         if (!ready || muted || sfxVol < 0.01f) return;
+        if (name.equals("click")) {
+            variant = (variant + 1 + (int) (Math.random() * 2)) % 3;
+            name = "click" + variant;
+        } else if (name.equals("op")) {
+            name = "op" + (int) (Math.random() * 2);
+        }
         AudioTrack t = sfx.get(name);
         if (t == null) return;
         try {

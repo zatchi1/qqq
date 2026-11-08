@@ -168,46 +168,68 @@ final class Synth {
         return out;
     }
 
-    // ------------------------------------------------------------ effects
-    static float[] click() {
-        float[] o = zeros(0.09);
-        mix(o, tone(0.07, 1300, 1900, 0, 0.002, 38), 0, 0.8f);
-        mix(o, tone(0.06, 650, 600, 1, 0.001, 60), 0, 0.22f);
-        normalize(o, 0.8f);
-        return o;
+    // ------------------------------------------------------------ keyboard sounds
+    /** White noise through a one-pole HIGH-pass (higher lp = higher cutoff) with exponential decay. */
+    static float[] hpNoise(double sec, double decay, double lp, Random r) {
+        float[] out = zeros(sec);
+        double y = 0;
+        for (int i = 0; i < out.length; i++) {
+            double t = (double) i / RATE;
+            double x = r.nextDouble() * 2 - 1;
+            y += lp * (x - y);
+            out[i] = (float) ((x - y) * Math.exp(-t * decay) * Math.min(1.0, (sec - t) / 0.003));
+        }
+        return out;
     }
 
-    static float[] operator() {
-        float[] o = zeros(0.2);
-        mix(o, tone(0.18, 420, 900, 3, 0.004, 12), 0, 0.8f);
-        mix(o, tone(0.18, 840, 1800, 0, 0.004, 16), 0, 0.25f);
-        normalize(o, 0.8f);
-        return o;
-    }
-
-    static float[] func() {
+    /**
+     * One mechanical-keyboard key stroke: sharp switch click, plastic clack, a short "thock" body that
+     * drops in pitch when the key bottoms out, and a tiny tick when the key returns.
+     */
+    static float[] key(double thockHz, double click, double thock, double release, long seed) {
+        Random r = new Random(seed);
         float[] o = zeros(0.14);
-        mix(o, tone(0.12, 900, 450, 3, 0.003, 18), 0, 0.8f);
-        normalize(o, 0.75f);
+        mix(o, hpNoise(0.022, 230, 0.30, r), 0.000, (float) click);
+        mix(o, hpNoise(0.030, 150, 0.55, r), 0.004, (float) (click * 0.6));
+        mix(o, tone(0.09, thockHz * 1.5, thockHz * 0.7, 0, 0.0015, 48), 0.005, (float) thock);
+        mix(o, noise(0.045, 90, 0.18), 0.005, (float) (thock * 0.35));
+        mix(o, hpNoise(0.014, 380, 0.45, r), 0.070, (float) release);
+        normalize(o, 0.85f);
         return o;
     }
 
+    /** Digit / dot keys: three slightly different strokes so fast typing does not sound robotic. */
+    static float[] click(int variant) {
+        double[] hz = {200, 184, 216};
+        return key(hz[variant % 3], 0.55, 0.9, 0.25, 11 + variant);
+    }
+
+    /** Operator keys: a deeper, fuller stroke. */
+    static float[] operator(int variant) {
+        double[] hz = {150, 138};
+        return key(hz[variant % 2], 0.5, 1.0, 0.3, 31 + variant);
+    }
+
+    /** C, backspace, %, +/-: lighter, higher keys. */
+    static float[] func() { return key(265, 0.7, 0.6, 0.2, 47); }
+
+    /** "=" is the Enter key: a big deep stroke followed by the stabiliser rattle. */
     static float[] equals() {
-        float[] o = zeros(0.6);
-        mix(o, tone(0.1, 523, 523, 1, 0.003, 14), 0.00, 0.35f);
-        mix(o, tone(0.1, 659, 659, 1, 0.003, 14), 0.08, 0.35f);
-        mix(o, tone(0.2, 880, 880, 1, 0.003, 9), 0.16, 0.35f);
-        mix(o, ufo(0.35, 900, 260, 16, 0, 6), 0.2, 0.4f);
-        normalize(o, 0.8f);
+        float[] o = zeros(0.26);
+        mix(o, key(112, 0.5, 1.15, 0.35, 61), 0.00, 1f);
+        mix(o, key(330, 0.45, 0.25, 0.1, 62), 0.035, 0.45f);
+        mix(o, hpNoise(0.02, 200, 0.5, new Random(63)), 0.12, 0.25f);
+        normalize(o, 0.9f);
         return o;
     }
 
+    /** Key mashing for "ERROR": four quick, uneven strokes. */
     static float[] error() {
-        float[] o = zeros(0.45);
-        mix(o, tone(0.4, 150, 95, 2, 0.003, 4), 0, 0.6f);
-        mix(o, tone(0.4, 158, 100, 2, 0.003, 4), 0, 0.6f);
-        saturate(o, 2.2);
-        normalize(o, 0.8f);
+        float[] o = zeros(0.5);
+        double[] at = {0.0, 0.075, 0.14, 0.23};
+        double[] hz = {170, 230, 140, 100};
+        for (int i = 0; i < at.length; i++) mix(o, key(hz[i], 0.6, 0.95, 0.15, 71 + i), at[i], 1f);
+        normalize(o, 0.9f);
         return o;
     }
 

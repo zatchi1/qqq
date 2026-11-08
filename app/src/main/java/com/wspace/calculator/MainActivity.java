@@ -1,8 +1,10 @@
 package com.wspace.calculator;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.res.ColorStateList;
-import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
@@ -16,10 +18,11 @@ import android.widget.Switch;
 import android.widget.TextView;
 
 /**
- * W-SPACE CALCULATOR.
+ * Washwashni.
  *
- * Screen = SpaceView (full-screen animated backdrop with the floating alien) + calculator panel
- * (DisplayView + glass keypad) + EliminationView overlay (cinematic scene) + audio controls.
+ * Pixel-art calculator. Screen = SpaceView (empty night sky with a few far stars) + DisplayView and
+ * PixelButton keypad + CharacterView (tiny character walking on the key rows) + EliminationView
+ * overlay (ELIMINATED! scene) + audio controls.
  *
  * Input state lives in {@link #expr} using ASCII operators (+ - * /); the display maps them to the
  * proper glyphs. Evaluation is done by {@link Calc}, which is plain Java and unit-tested.
@@ -35,7 +38,7 @@ public class MainActivity extends Activity {
     private EliminationView elim;
     private LinearLayout panel;
     private LinearLayout soundPanel;
-    private GlassButton soundBtn;
+    private PixelButton soundBtn;
     private SoundEngine sound;
 
     private String expr = "";
@@ -46,6 +49,10 @@ public class MainActivity extends Activity {
     private boolean soundPanelOpen = false;
 
     // ------------------------------------------------------------------ setup
+    private CharacterView character;
+    private LinearLayout pad;
+    private final LinearLayout[] rows = new LinearLayout[5];
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,22 +60,25 @@ public class MainActivity extends Activity {
         sound.start();
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.BLACK);
+        root.setBackgroundColor(0xFF090914);
 
         space = new SpaceView(this);
         root.addView(space, new FrameLayout.LayoutParams(-1, -1));
 
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
+        column.setPadding(dp(10), dp(8), dp(10), dp(10));
         root.addView(column, new FrameLayout.LayoutParams(-1, -1));
 
-        // top area: tapping the alien makes it react
-        View top = new View(this);
-        top.setOnClickListener(v -> { space.bump(); sound.play("equals"); });
-        column.addView(top, new LinearLayout.LayoutParams(-1, 0, 38f));
+        // header: app name on the left (the sound button floats on the right)
+        TitleView title = new TitleView(this, "WASHWASHNI");
+        column.addView(title, new LinearLayout.LayoutParams(-1, dp(58)));
 
         panel = buildPanel();
-        column.addView(panel, new LinearLayout.LayoutParams(-1, 0, 62f));
+        column.addView(panel, new LinearLayout.LayoutParams(-1, 0, 1f));
+
+        character = new CharacterView(this);
+        root.addView(character, new FrameLayout.LayoutParams(-1, -1));
 
         buildSoundControls(root);
 
@@ -76,6 +86,7 @@ public class MainActivity extends Activity {
         root.addView(elim, new FrameLayout.LayoutParams(-1, -1));
 
         setContentView(root);
+        pad.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> placeCharacter());
         refresh(false);
     }
 
@@ -83,73 +94,100 @@ public class MainActivity extends Activity {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
     }
 
+    /** Tells the walking character where the key rows are (it stands on the top edge of each row). */
+    private void placeCharacter() {
+        int[] o = new int[2], q = new int[2];
+        character.getLocationOnScreen(o);
+        float[] floors = new float[rows.length - 1];
+        for (int i = 1; i < rows.length; i++) {
+            rows[i].getLocationOnScreen(q);
+            floors[i - 1] = q[1] - o[1] + dp(5);
+        }
+        pad.getLocationOnScreen(q);
+        character.setStage(q[0] - o[0] + dp(6), q[0] - o[0] + pad.getWidth() - dp(6), floors);
+    }
+
     private LinearLayout buildPanel() {
         LinearLayout p = new LinearLayout(this);
         p.setOrientation(LinearLayout.VERTICAL);
-        p.setPadding(dp(12), dp(12), dp(12), dp(12));
-        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM,
-                new int[]{0xCC0A1838, 0xE6050818});
-        float r = dp(28);
-        bg.setCornerRadii(new float[]{r, r, r, r, 0, 0, 0, 0});
-        bg.setStroke(dp(2), 0x6618F5C8);
-        p.setBackground(bg);
 
         display = new DisplayView(this);
-        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, 0, 21f);
-        dl.setMargins(dp(2), 0, dp(2), dp(8));
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-1, 0, 22f);
+        dl.setMargins(0, 0, 0, dp(10));
         p.addView(display, dl);
 
         // {label, key, kind}
         Object[][] keys = {
-                {"C", "C", GlassButton.FUNCTION}, {GlassButton.ICON_BACK, "B", GlassButton.FUNCTION},
-                {"%", "%", GlassButton.FUNCTION}, {"÷", "/", GlassButton.OPERATOR},
-                {"7", "7", GlassButton.DIGIT}, {"8", "8", GlassButton.DIGIT},
-                {"9", "9", GlassButton.DIGIT}, {"×", "*", GlassButton.OPERATOR},
-                {"4", "4", GlassButton.DIGIT}, {"5", "5", GlassButton.DIGIT},
-                {"6", "6", GlassButton.DIGIT}, {"−", "-", GlassButton.OPERATOR},
-                {"1", "1", GlassButton.DIGIT}, {"2", "2", GlassButton.DIGIT},
-                {"3", "3", GlassButton.DIGIT}, {"+", "+", GlassButton.OPERATOR},
-                {"±", "N", GlassButton.FUNCTION}, {"0", "0", GlassButton.DIGIT},
-                {".", ".", GlassButton.DIGIT}, {"=", "=", GlassButton.EQUALS},
+                {"C", "C", PixelButton.FUNCTION}, {PixelButton.ICON_BACK, "B", PixelButton.FUNCTION},
+                {"%", "%", PixelButton.FUNCTION}, {"\u00F7", "/", PixelButton.OPERATOR},
+                {"7", "7", PixelButton.DIGIT}, {"8", "8", PixelButton.DIGIT},
+                {"9", "9", PixelButton.DIGIT}, {"\u00D7", "*", PixelButton.OPERATOR},
+                {"4", "4", PixelButton.DIGIT}, {"5", "5", PixelButton.DIGIT},
+                {"6", "6", PixelButton.DIGIT}, {"\u2212", "-", PixelButton.OPERATOR},
+                {"1", "1", PixelButton.DIGIT}, {"2", "2", PixelButton.DIGIT},
+                {"3", "3", PixelButton.DIGIT}, {"+", "+", PixelButton.OPERATOR},
+                {"\u00B1", "N", PixelButton.FUNCTION}, {"0", "0", PixelButton.DIGIT},
+                {".", ".", PixelButton.DIGIT}, {"=", "=", PixelButton.EQUALS},
         };
-        LinearLayout pad = new LinearLayout(this);
+        pad = new LinearLayout(this);
         pad.setOrientation(LinearLayout.VERTICAL);
-        p.addView(pad, new LinearLayout.LayoutParams(-1, 0, 79f));
+        p.addView(pad, new LinearLayout.LayoutParams(-1, 0, 78f));
         for (int row = 0; row < 5; row++) {
             LinearLayout line = new LinearLayout(this);
             line.setOrientation(LinearLayout.HORIZONTAL);
+            rows[row] = line;
             pad.addView(line, new LinearLayout.LayoutParams(-1, 0, 1f));
             for (int col = 0; col < 4; col++) {
                 Object[] k = keys[row * 4 + col];
                 final String key = (String) k[1];
-                GlassButton b = new GlassButton(this, (String) k[0], (Integer) k[2]);
+                PixelButton b = new PixelButton(this, (String) k[0], (Integer) k[2]);
                 b.setOnClickListener(v -> onKey(key));
                 LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(0, -1, 1f);
-                bl.setMargins(dp(3), dp(3), dp(3), dp(3));
+                bl.setMargins(dp(2), dp(2), dp(2), dp(2));
                 line.addView(b, bl);
             }
         }
         return p;
     }
 
+    /** "WASHWASHNI" in pixel lettering. */
+    private static final class TitleView extends View {
+        private final String text;
+        private final Paint p = new Paint();
+        private final float density;
+
+        TitleView(Context ctx, String text) {
+            super(ctx);
+            this.text = text;
+            density = ctx.getResources().getDisplayMetrics().density;
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            float u = Math.max(2f, Math.round(density * 2.4f));
+            float y = (getHeight() - FontData.HEIGHT * u) / 2f;
+            PixelFont.shadowed(c, p, text, Math.round(density * 6f), Math.round(y), u, 0xFF8DFFB0, 0xFF06301C);
+        }
+    }
+
     private void buildSoundControls(FrameLayout root) {
-        soundBtn = new GlassButton(this, GlassButton.ICON_SOUND, GlassButton.ICON);
-        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(dp(50), dp(50),
+        soundBtn = new PixelButton(this, PixelButton.ICON_SOUND, PixelButton.ICON);
+        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(dp(54), dp(54),
                 Gravity.TOP | Gravity.END);
-        bl.setMargins(0, dp(26), dp(10), 0);
+        bl.setMargins(0, dp(6), dp(10), 0);
         root.addView(soundBtn, bl);
 
         soundPanel = new LinearLayout(this);
         soundPanel.setOrientation(LinearLayout.VERTICAL);
         soundPanel.setPadding(dp(16), dp(12), dp(16), dp(10));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xEE071428);
-        bg.setCornerRadius(dp(18));
-        bg.setStroke(dp(2), 0x8018F5C8);
+        bg.setColor(0xF2101030);
+        bg.setCornerRadius(0f);
+        bg.setStroke(dp(3), 0xFF3CC9A6);
         soundPanel.setBackground(bg);
         soundPanel.setVisibility(View.GONE);
 
-        TextView title = label("AUDIO", 13, 0xFF18F5C8);
+        TextView title = label("AUDIO", 13, 0xFF8DFFB0);
         soundPanel.addView(title);
         addSlider("MUSIC", sound.getMusicVolume(), new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int v, boolean user) {
@@ -158,7 +196,7 @@ public class MainActivity extends Activity {
             @Override public void onStartTrackingTouch(SeekBar s) { }
             @Override public void onStopTrackingTouch(SeekBar s) { }
         });
-        addSlider("EFFECTS", sound.getSfxVolume(), new SeekBar.OnSeekBarChangeListener() {
+        addSlider("KEYS", sound.getSfxVolume(), new SeekBar.OnSeekBarChangeListener() {
             @Override public void onProgressChanged(SeekBar s, int v, boolean user) {
                 if (user) sound.setSfxVolume(v / 100f);
             }
@@ -169,7 +207,7 @@ public class MainActivity extends Activity {
         Switch mute = new Switch(this);
         mute.setText("MUTE ALL");
         mute.setTextColor(0xFFFFFFFF);
-        mute.setTypeface(Typeface.DEFAULT_BOLD);
+        mute.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         mute.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         mute.setOnCheckedChangeListener((b, checked) -> {
             sound.setMuted(checked);
@@ -180,7 +218,7 @@ public class MainActivity extends Activity {
         soundPanel.addView(mute, ml);
 
         FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(dp(240), -2, Gravity.TOP | Gravity.END);
-        pl.setMargins(0, dp(26 + 50 + 8), dp(10), 0);
+        pl.setMargins(0, dp(6 + 54 + 6), dp(10), 0);
         root.addView(soundPanel, pl);
 
         soundBtn.setOnClickListener(v -> {
@@ -200,7 +238,7 @@ public class MainActivity extends Activity {
         TextView t = new TextView(this);
         t.setText(text);
         t.setTextColor(color);
-        t.setTypeface(Typeface.DEFAULT_BOLD);
+        t.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
         t.setLetterSpacing(0.12f);
         return t;
@@ -214,7 +252,7 @@ public class MainActivity extends Activity {
         SeekBar sb = new SeekBar(this);
         sb.setMax(100);
         sb.setProgress(Math.round(value * 100f));
-        ColorStateList cs = ColorStateList.valueOf(0xFF18F5C8);
+        ColorStateList cs = ColorStateList.valueOf(0xFF3CC9A6);
         sb.setProgressTintList(cs);
         sb.setThumbTintList(cs);
         sb.setOnSeekBarChangeListener(l);
@@ -226,12 +264,14 @@ public class MainActivity extends Activity {
         super.onResume();
         sound.resume();
         space.setRunning(true);
+        character.setRunning(true);
     }
 
     @Override protected void onPause() {
         super.onPause();
         sound.pause();
         space.setRunning(false);
+        character.setRunning(false);
     }
 
     @Override protected void onDestroy() {
@@ -242,7 +282,7 @@ public class MainActivity extends Activity {
     // ------------------------------------------------------------------ input
     private void onKey(String key) {
         if (locked) return;
-        space.bump();
+        character.hop();
         switch (key) {
             case "C":
                 doClear();

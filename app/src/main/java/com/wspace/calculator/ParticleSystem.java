@@ -73,34 +73,35 @@ final class ParticleSystem {
         return false;
     }
 
+    /** Square "pixel" particles: sparks shrink, smoke grows and fades, stars twinkle out. */
     void draw(Canvas c, Paint p) {
+        p.setStyle(Paint.Style.FILL);
         for (int i = 0; i < cap; i++) {
             if (life[i] <= 0f) continue;
             float k = life[i] / maxLife[i];
+            float sz;
+            int a;
             switch (type[i]) {
                 case SPARK:
-                    p.setStyle(Paint.Style.STROKE);
-                    p.setStrokeCap(Paint.Cap.ROUND);
-                    p.setStrokeWidth(size[i] * k + 0.5f);
-                    p.setColor(color[i]);
-                    p.setAlpha((int) (255 * Math.min(1f, k * 1.6f)));
-                    c.drawLine(x[i], y[i], x[i] - vx[i] * 0.04f, y[i] - vy[i] * 0.04f, p);
+                    sz = Math.max(2f, size[i] * (0.5f + k));
+                    a = (int) (255 * Math.min(1f, k * 1.6f));
                     break;
                 case SMOKE:
-                    p.setStyle(Paint.Style.FILL);
-                    p.setColor(color[i]);
-                    p.setAlpha((int) (110 * k));
-                    c.drawCircle(x[i], y[i], size[i], p);
+                    sz = size[i];
+                    a = (int) (120 * k);
                     break;
                 default:
-                    p.setStyle(Paint.Style.FILL);
-                    p.setColor(color[i]);
-                    p.setAlpha((int) (255 * k));
-                    c.drawCircle(x[i], y[i], size[i] * (0.4f + 0.6f * k), p);
+                    sz = Math.max(2f, size[i] * (0.4f + 0.6f * k));
+                    a = (int) (255 * k);
                     break;
             }
+            // snap to a coarse grid so everything keeps the pixel look
+            float g = Math.max(2f, sz * 0.5f);
+            float px = Math.round(x[i] / g) * g, py = Math.round(y[i] / g) * g;
+            p.setColor(color[i]);
+            p.setAlpha(Math.max(0, Math.min(255, a)));
+            c.drawRect(px - sz / 2f, py - sz / 2f, px + sz / 2f, py + sz / 2f, p);
         }
         p.setAlpha(255);
-        p.setStyle(Paint.Style.FILL);
     }
 }
