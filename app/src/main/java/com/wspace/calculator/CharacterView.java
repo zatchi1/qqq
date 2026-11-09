@@ -72,10 +72,19 @@ final class CharacterView extends View {
 
     /** The big character sits with its body behind the display; cx = centre, top = display's top edge. */
     void setPeek(float cx, float displayTop, float width) {
+        // never taller than the room above the display (otherwise the head would be cut off by the
+        // top of the screen on phones where that gap is small)
+        if (peek != null) {
+            float ratio = peek.getHeight() / (float) peek.getWidth();
+            float room = displayTop - density * 13f;                 // bobbing + hop + a little margin
+            float maxByHeight = room / (0.62f * ratio);
+            if (maxByHeight > density * 40f) width = Math.min(width, maxByHeight);
+            else width = Math.min(width, density * 40f);
+        }
         peekCx = cx;
         peekTop = displayTop;
         peekW = width;
-        hasPeek = peek != null;
+        hasPeek = peek != null && displayTop > 0f;
     }
 
     void setRunning(boolean r) {
