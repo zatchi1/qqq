@@ -161,9 +161,11 @@ final class CharacterView extends View {
                 step = 2;                                        // feet tucked: both lowered
             } else {
                 step = 2;
-                bob = ((int) (tongueClock / 0.7f)) % 2 == 0 ? 0f : -s * 0.5f;   // slow breathing
+                bob = 0f;
             }
-            float top = y - (SpriteData.H + 2) * s - hop + bob;
+            // calm weightless float: a slow sine drift on top of whatever it is doing
+            float drift = (float) Math.sin(tongueClock * 2.3f) * s * 1.1f - s * 1.1f;
+            float top = y - (SpriteData.H + 2) * s - hop + bob + drift;
             float lx = x - SpriteData.W * s / 2f;
             Sprite.draw(c, p, Math.round(lx), Math.round(top), s, faceLeft, step);
         }

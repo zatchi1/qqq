@@ -3,6 +3,7 @@ package com.wspace.calculator;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.os.SystemClock;
 import android.view.MotionEvent;
 import android.view.View;
 
@@ -19,6 +20,9 @@ final class PixelButton extends View {
     private final Paint p = new Paint();
     private boolean down = false;
     private boolean muted = false;
+    private long fxStart = -1;                       // when the last press effect began
+    private final float[] fxAng = new float[6];      // flying sparkle directions
+    private final float[] fxDist = new float[6];
     private final int edge = 0xFF05050F;
     private final int face, light, dark, text, textShadow;
 
@@ -49,6 +53,7 @@ final class PixelButton extends View {
         switch (e.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
                 down = true;
+                startFx();
                 invalidate();
                 return true;
             case MotionEvent.ACTION_UP:
@@ -70,6 +75,54 @@ final class PixelButton extends View {
     @Override
     public boolean performClick() {
         return super.performClick();
+    }
+
+    private static final float FX_SECONDS = 0.38f;
+
+    /** Starts the small press effect: a soft flash on the key and a few pixel sparkles flying out. */
+    private void startFx() {
+        fxStart = SystemClock.uptimeMillis();
+        for (int i = 0; i < fxAng.length; i++) {
+            fxAng[i] = (float) ((i + Math.random() * 0.8) * Math.PI * 2 / fxAng.length);
+            fxDist[i] = 0.7f + (float) Math.random() * 0.3f;
+        }
+    }
+
+    private static int withAlpha(int color, float a) {
+        int al = Math.max(0, Math.min(255, Math.round(a * 255f)));
+        return (al << 24) | (color & 0x00FFFFFF);
+    }
+
+    /** Press effect drawn on top of the key; keeps the view redrawing only while it is visible. */
+    private void drawFx(Canvas c, float w, float h, float u) {
+        if (fxStart < 0) return;
+        float age = (SystemClock.uptimeMillis() - fxStart) / 1000f;
+        if (age >= FX_SECONDS) {
+            fxStart = -1;
+            return;
+        }
+        float k = age / FX_SECONDS;                          // 0..1
+        float ease = 1f - (1f - k) * (1f - k);
+        p.setStyle(Paint.Style.FILL);
+
+        // soft flash that melts away
+        float gap = u;
+        float flash = Math.max(0f, 1f - k * 2.6f);
+        if (flash > 0f) {
+            stepped(c, gap + 3 * u, gap + 3 * u, w - gap - 3 * u, h - gap - 3 * u, u, withAlpha(0xFFFFFFFF, 0.28f * flash));
+        }
+        // sparkles
+        float cx = w / 2f, cy = h / 2f;
+        float reach = Math.min(w, h) * 0.46f;
+        float size = Math.max(2f, u * (1.6f - 1.1f * k));
+        for (int i = 0; i < fxAng.length; i++) {
+            float d = reach * fxDist[i] * (0.25f + 0.75f * ease);
+            float x = Math.round((cx + (float) Math.cos(fxAng[i]) * d * (w / Math.min(w, h))) / u) * u;
+            float y = Math.round((cy + (float) Math.sin(fxAng[i]) * d) / u) * u;
+            p.setColor(withAlpha(i % 2 == 0 ? 0xFFFFFFFF : light, 1f - k));
+            c.drawRect(x - size / 2f, y - size / 2f, x + size / 2f, y + size / 2f, p);
+        }
+        postInvalidateOnAnimation();
     }
 
     /** Rectangle with the corners cut away in two pixel steps. */
@@ -120,6 +173,7 @@ final class PixelButton extends View {
             PixelFont.shadowed(c, p, label, Math.round(cx - tw / 2f), Math.round(cy - FontData.HEIGHT * lu / 2f),
                     lu, text, textShadow);
         }
+        drawFx(c, w, h, u);
     }
 
     // 12 x 7 "backspace" key: '#' = key body, 'x' = the cross cut out of it

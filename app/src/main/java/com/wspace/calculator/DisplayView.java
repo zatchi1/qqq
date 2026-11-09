@@ -26,12 +26,16 @@ final class DisplayView extends View {
     private static final int DIM = 0xFF4FB88C, DIM_SHADOW = 0xFF06241A;
     private static final int ALIEN_FILL = 0xFF92C673, ALIEN_EDGE = 0xFF14141E;
 
-    // timeline of the kill scene (seconds)
-    private static final float T_ALIEN = 0.35f;     // digit turns into a creature
-    private static final float T_PANIC = 0.45f;     // it notices the danger
-    private static final float T_CUT = 0.85f;       // first cut
-    private static final float CUT_SPREAD = 0.55f;  // cuts are spread over this window
-    private static final float T_FALL = 1.15f;      // fall + fade after a cut
+    // timeline of the kill scene (seconds). The KILL sound starts at PRE_ROLL and its hit is heard
+    // KILL_IMPACT later: that is exactly when the first digit is cut (T_CUT); the rest follow inside
+    // the loud part of the sound, and from then on the animation follows the audio playhead.
+    private static final float T_ALIEN = 0.30f;     // digit turns into a creature
+    private static final float T_PANIC = 0.30f;     // it notices the danger
+    private static final float T_IMPACT = ScenePlan.KILL_IMPACT;
+    private static final float PRE_ROLL = 0.55f;    // KILL sound starts here
+    private static final float T_CUT = PRE_ROLL + T_IMPACT;   // first cut
+    private static final float CUT_SPREAD = 0.14f;  // cuts are spread over this window
+    private static final float T_FALL = 0.90f;      // fall + fade after a cut
 
     private static final class G {
         char ch;
@@ -64,6 +68,12 @@ final class DisplayView extends View {
     private ArrayList<G> glyphs = new ArrayList<>();
     private Runnable onSliceDone;
     private float sliceTotal;
+    private Runnable playKill;          // starts the KILL sound
+    private AudioClock killClock;       // playhead of the KILL sound
+    private boolean killStarted;
+    private long killStartMs;
+    private ScenePlan.Clock killTime;   // scene time after the KILL sound started
+    private float sliceT;               // monotonic scene time (s)
 
     DisplayView(Context ctx) {
         super(ctx);
@@ -89,8 +99,13 @@ final class DisplayView extends View {
 
     boolean isSlicing() { return slicing; }
 
-    /** Plays the digit-killing scene; onDone runs once everything has fallen and the screen is empty. */
-    void startSlice(Runnable onDone) {
+    /**
+     * Plays the digit-killing scene; onDone runs once everything has fallen and the screen is empty.
+     *
+     * @param kill  starts the KILL sound (called once, PRE_ROLL seconds into the scene)
+     * @param clock playhead of the KILL sound; the cuts are timed against it
+     */
+    void startSlice(Runnable kill, AudioClock clock, Runnable onDone) {
         ArrayList<G> list = buildLayout();
         if (list.isEmpty() || getWidth() == 0) {
             small = ""; big = ""; prevBig = "";
@@ -98,6 +113,10 @@ final class DisplayView extends View {
             if (onDone != null) onDone.run();
             return;
         }
+        playKill = kill;
+        killClock = clock;
+        killStarted = false;
+        sliceT = 0f;
         releaseBitmaps();
         glyphs = list;
         int n = glyphs.size();
@@ -231,10 +250,10 @@ final class DisplayView extends View {
         boolean needFrame = false;
 
         if (slicing) {
-            float t = (now - sliceStartMs) / 1000f;
             long ns = System.nanoTime();
             float dt = lastNs == 0 ? 0.016f : Math.min(0.05f, (ns - lastNs) / 1e9f);
             lastNs = ns;
+            float t = sliceClock(now, dt);
             drawSlice(c, t);
             ps.update(dt);
             ps.draw(c, p);
@@ -273,6 +292,29 @@ final class DisplayView extends View {
         }
         // the status LED blinks, so keep a slow heartbeat going
         if (needFrame) postInvalidateOnAnimation(); else postInvalidateDelayed(600);
+    }
+
+    /**
+     * Scene time. Before the KILL sound starts it is plain wall time; afterwards it follows the audio
+     * playhead (and falls back to wall time if no audio is playing), so the cuts land on the hit.
+     */
+    private float sliceClock(long now, float dt) {
+        float wall = (now - sliceStartMs) / 1000f;
+        if (!killStarted) {
+            if (wall < PRE_ROLL) {
+                sliceT = wall;
+                return sliceT;
+            }
+            killStarted = true;
+            killStartMs = now;
+            killTime = new ScenePlan.Clock(ScenePlan.KILL_LEN);
+            sliceT = PRE_ROLL;
+            if (playKill != null) playKill.run();
+        }
+        float since = (now - killStartMs) / 1000f;
+        float ph = killClock != null ? killClock.playheadSec() : -1f;
+        sliceT = PRE_ROLL + killTime.update(since, ph, dt);
+        return sliceT;
     }
 
     /** Stepped-corner LCD with scan lines, a pixel frame and a blinking LED. */
