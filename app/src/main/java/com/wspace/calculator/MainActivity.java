@@ -8,6 +8,8 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
@@ -35,7 +37,7 @@ public class MainActivity extends Activity {
 
     private SpaceView space;
     private DisplayView display;
-    private EliminationView elim;
+    private CinematicView elim;
     private LinearLayout panel;
     private LinearLayout soundPanel;
     private PixelButton soundBtn;
@@ -48,6 +50,10 @@ public class MainActivity extends Activity {
     private boolean locked = false;     // input disabled while a scene plays
     private boolean soundPanelOpen = false;
 
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Trigger106 trigger106 = new Trigger106();
+    private final Runnable play106 = this::fire106;
+
     // ------------------------------------------------------------------ setup
     private CharacterView character;
     private LinearLayout pad;
@@ -56,7 +62,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        sound = new SoundEngine();
+        sound = new SoundEngine(this);
         sound.start();
 
         FrameLayout root = new FrameLayout(this);
@@ -82,7 +88,8 @@ public class MainActivity extends Activity {
 
         buildSoundControls(root);
 
-        elim = new EliminationView(this);
+        elim = new CinematicView(this, sound);
+        elim.preload();
         root.addView(elim, new FrameLayout.LayoutParams(-1, -1));
 
         setContentView(root);
@@ -269,6 +276,9 @@ public class MainActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        handler.removeCallbacks(play106);
+        trigger106.reset();
+        if (elim.isRunning()) elim.abort();
         sound.pause();
         space.setRunning(false);
         character.setRunning(false);
@@ -276,6 +286,7 @@ public class MainActivity extends Activity {
 
     @Override protected void onDestroy() {
         super.onDestroy();
+        handler.removeCallbacks(play106);
         sound.release();
     }
 
@@ -317,6 +328,30 @@ public class MainActivity extends Activity {
         }
         blank = false;
         refresh(false);
+        sync106();
+    }
+
+    // ------------------------------------------------------------------ special 106 sound
+    /** Schedules / cancels the 106 sound whenever the expression changes (see Trigger106). */
+    private void sync106() {
+        switch (trigger106.update(expr)) {
+            case ARM:
+                handler.removeCallbacks(play106);
+                handler.postDelayed(play106, Trigger106.DELAY_MS);
+                break;
+            case CANCEL:
+                handler.removeCallbacks(play106);
+                break;
+            default:
+                break;
+        }
+    }
+
+    private void fire106() {
+        if (!Trigger106.VALUE.equals(expr) || locked) return;     // changed in the meantime: stay silent
+        sound.duckMusic(true);
+        sound.playScene("s106");
+        handler.postDelayed(() -> { if (!locked) sound.duckMusic(false); }, 3000);
     }
 
     private void startFresh() {
@@ -459,14 +494,14 @@ public class MainActivity extends Activity {
         justEvaluated = true;
         blank = false;
         refresh(true);
+        sync106();
     }
 
     private void playEliminationScene(String e, String res) {
         locked = true;
         sound.duckMusic(true);
-        sound.play("elim");
         panel.animate().alpha(0.25f).setDuration(150).start();
-        elim.start(() -> {
+        elim.start(Calc.toDisplay(e), Calc.toDisplay(res), () -> {
             applyResult(e, res, false);          // result is revealed behind the fading overlay
             sound.duckMusic(false);
             panel.animate().alpha(1f).setDuration(260).start();
@@ -483,12 +518,12 @@ public class MainActivity extends Activity {
             return;
         }
         locked = true;
-        sound.play("slice");
         expr = "";
         lastExprText = "";
         bigText = "";
         justEvaluated = false;
         blank = true;
-        display.startSlice(() -> locked = false);
+        sync106();                                  // clearing cancels a pending 106
+        display.startSlice(() -> sound.playScene("kill"), sound.clock("kill"), () -> locked = false);
     }
 }
