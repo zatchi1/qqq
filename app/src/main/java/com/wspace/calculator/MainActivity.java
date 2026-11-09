@@ -9,6 +9,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.SystemClock;
 import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -36,6 +37,9 @@ public class MainActivity extends Activity {
     private static final int MAX_LEN = 22;
 
     private SpaceView space;
+    private PanelFrame frame;
+    private PixelButton gearBtn;
+    private Switch muteSwitch;
     private DisplayView display;
     private CinematicView elim;
     private LinearLayout panel;
@@ -71,14 +75,17 @@ public class MainActivity extends Activity {
         space = new SpaceView(this);
         root.addView(space, new FrameLayout.LayoutParams(-1, -1));
 
+        frame = new PanelFrame(this);
+        root.addView(frame, new FrameLayout.LayoutParams(-1, -1));
+
         LinearLayout column = new LinearLayout(this);
         column.setOrientation(LinearLayout.VERTICAL);
         column.setPadding(dp(10), dp(8), dp(10), dp(10));
         root.addView(column, new FrameLayout.LayoutParams(-1, -1));
 
         // header: app name on the left (the sound button floats on the right)
-        TitleView title = new TitleView(this, "WASHWASHNI");
-        column.addView(title, new LinearLayout.LayoutParams(-1, dp(58)));
+        TitleView title = new TitleView(this);
+        column.addView(title, new LinearLayout.LayoutParams(-1, dp(88)));
 
         panel = buildPanel();
         column.addView(panel, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -94,6 +101,7 @@ public class MainActivity extends Activity {
 
         setContentView(root);
         pad.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> placeCharacter());
+        panel.addOnLayoutChangeListener((v, l, t, r, b, ol, ot, or, ob) -> placeCharacter());
         refresh(false);
     }
 
@@ -101,17 +109,21 @@ public class MainActivity extends Activity {
         return Math.round(TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics()));
     }
 
-    /** Tells the walking character where the key rows are (it stands on the top edge of each row). */
+    /** Tells the overlays where things are: the keypad (floating character), display (peeking character), frame. */
     private void placeCharacter() {
         int[] o = new int[2], q = new int[2];
         character.getLocationOnScreen(o);
-        float[] floors = new float[rows.length - 1];
-        for (int i = 1; i < rows.length; i++) {
-            rows[i].getLocationOnScreen(q);
-            floors[i - 1] = q[1] - o[1] + dp(5);
-        }
         pad.getLocationOnScreen(q);
-        character.setStage(q[0] - o[0] + dp(6), q[0] - o[0] + pad.getWidth() - dp(6), floors);
+        float pl = q[0] - o[0], pt = q[1] - o[1];
+        character.setFloatArea(pl + dp(26), pt + dp(26), pl + pad.getWidth() - dp(26), pt + pad.getHeight() - dp(26));
+        display.getLocationOnScreen(q);
+        float w = character.getWidth();
+        character.setPeek(w * 0.56f, q[1] - o[1], w * 0.30f);
+        int[] fo = new int[2];
+        frame.getLocationOnScreen(fo);
+        panel.getLocationOnScreen(q);
+        frame.setRect(q[0] - fo[0] - dp(8), q[1] - fo[1] - dp(6), q[0] - fo[0] + panel.getWidth() + dp(8),
+                q[1] - fo[1] + panel.getHeight() + dp(6));
     }
 
     private LinearLayout buildPanel() {
@@ -125,7 +137,7 @@ public class MainActivity extends Activity {
 
         // {label, key, kind}
         Object[][] keys = {
-                {"C", "C", PixelButton.FUNCTION}, {PixelButton.ICON_BACK, "B", PixelButton.FUNCTION},
+                {"C", "C", PixelButton.CLEAR}, {PixelButton.ICON_BACK, "B", PixelButton.FUNCTION},
                 {"%", "%", PixelButton.FUNCTION}, {"\u00F7", "/", PixelButton.OPERATOR},
                 {"7", "7", PixelButton.DIGIT}, {"8", "8", PixelButton.DIGIT},
                 {"9", "9", PixelButton.DIGIT}, {"\u00D7", "*", PixelButton.OPERATOR},
@@ -133,7 +145,7 @@ public class MainActivity extends Activity {
                 {"6", "6", PixelButton.DIGIT}, {"\u2212", "-", PixelButton.OPERATOR},
                 {"1", "1", PixelButton.DIGIT}, {"2", "2", PixelButton.DIGIT},
                 {"3", "3", PixelButton.DIGIT}, {"+", "+", PixelButton.OPERATOR},
-                {"\u00B1", "N", PixelButton.FUNCTION}, {"0", "0", PixelButton.DIGIT},
+                {"\u00B1", "N", PixelButton.SIGN}, {"0", "0", PixelButton.DIGIT},
                 {".", ".", PixelButton.DIGIT}, {"=", "=", PixelButton.EQUALS},
         };
         pad = new LinearLayout(this);
@@ -157,31 +169,64 @@ public class MainActivity extends Activity {
         return p;
     }
 
-    /** "WASHWASHNI" in pixel lettering. */
+    private static final String[] CROWN = {
+            ".#..#..#.",
+            "##.###.##",
+            "#########",
+            "#########",
+            ".#######."};
+
+    /** "W-SPACE CALCULATOR" logo in pixel lettering with a little crown. */
     private static final class TitleView extends View {
-        private final String text;
         private final Paint p = new Paint();
         private final float density;
 
-        TitleView(Context ctx, String text) {
+        TitleView(Context ctx) {
             super(ctx);
-            this.text = text;
             density = ctx.getResources().getDisplayMetrics().density;
         }
 
         @Override
         protected void onDraw(Canvas c) {
-            float u = Math.max(2f, Math.round(density * 2.4f));
-            float y = (getHeight() - FontData.HEIGHT * u) / 2f;
-            PixelFont.shadowed(c, p, text, Math.round(density * 6f), Math.round(y), u, 0xFF8DFFB0, 0xFF06301C);
+            String a = "W-SPACE", b = "CALCULATOR";
+            float maxW = getWidth() * 0.38f;
+            float uB = Math.max(2f, (float) Math.floor(Math.min(maxW / FontData.textWidth(a), density * 4.4f)));
+            float uS = Math.max(2f, (float) Math.floor(Math.min(maxW / FontData.textWidth(b), density * 2.8f)));
+            float x = Math.round(density * 8f);
+            float cu = Math.max(2f, Math.round(uB * 0.8f));
+            float crownH = CROWN.length * cu;
+            float total = crownH + FontData.HEIGHT * uB + FontData.HEIGHT * uS + uB * 1.2f;
+            float y0 = Math.max(0f, (getHeight() - total) / 2f);
+
+            // crown over the right half of "W-SPACE", gently bobbing
+            float cx = x + FontData.textWidth(a) * uB * 0.62f;
+            float bob = (float) Math.sin(SystemClock.uptimeMillis() / 600.0) * cu * 0.5f;
+            p.setStyle(Paint.Style.FILL);
+            for (int r = 0; r < CROWN.length; r++) {
+                for (int q = 0; q < CROWN[r].length(); q++) {
+                    if (CROWN[r].charAt(q) != '#') continue;
+                    p.setColor(r < 2 ? 0xFFD6FF6A : 0xFF8DE83C);
+                    c.drawRect(Math.round(cx + q * cu), Math.round(y0 + bob + r * cu),
+                            Math.round(cx + (q + 1) * cu), Math.round(y0 + bob + (r + 1) * cu), p);
+                }
+            }
+            float y1 = Math.round(y0 + crownH + uB * 0.4f);
+            PixelFont.outlined(c, p, a, x, y1, uB, 0xFF55F04A, 0xFF0B3A12);
+            float y2 = Math.round(y1 + FontData.HEIGHT * uB + uB * 0.8f);
+            PixelFont.outlined(c, p, b, x, y2, uS, 0xFFFFFFFF, 0xFF2A2A78);
+            postInvalidateDelayed(60);
         }
     }
 
     private void buildSoundControls(FrameLayout root) {
+        gearBtn = new PixelButton(this, PixelButton.ICON_GEAR, PixelButton.ICON_LIME);
+        FrameLayout.LayoutParams gl = new FrameLayout.LayoutParams(dp(54), dp(54), Gravity.TOP | Gravity.END);
+        gl.setMargins(0, dp(10), dp(10), 0);
+        root.addView(gearBtn, gl);
+
         soundBtn = new PixelButton(this, PixelButton.ICON_SOUND, PixelButton.ICON);
-        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(dp(54), dp(54),
-                Gravity.TOP | Gravity.END);
-        bl.setMargins(0, dp(6), dp(10), 0);
+        FrameLayout.LayoutParams bl = new FrameLayout.LayoutParams(dp(54), dp(54), Gravity.TOP | Gravity.END);
+        bl.setMargins(0, dp(10), dp(10 + 54 + 8), 0);
         root.addView(soundBtn, bl);
 
         soundPanel = new LinearLayout(this);
@@ -212,6 +257,7 @@ public class MainActivity extends Activity {
         });
 
         Switch mute = new Switch(this);
+        muteSwitch = mute;
         mute.setText("MUTE ALL");
         mute.setTextColor(0xFFFFFFFF);
         mute.setTypeface(Typeface.MONOSPACE, Typeface.BOLD);
@@ -225,10 +271,11 @@ public class MainActivity extends Activity {
         soundPanel.addView(mute, ml);
 
         FrameLayout.LayoutParams pl = new FrameLayout.LayoutParams(dp(240), -2, Gravity.TOP | Gravity.END);
-        pl.setMargins(0, dp(6 + 54 + 6), dp(10), 0);
+        pl.setMargins(0, dp(10 + 54 + 6), dp(10), 0);
         root.addView(soundPanel, pl);
 
-        soundBtn.setOnClickListener(v -> {
+        soundBtn.setOnClickListener(v -> muteSwitch.setChecked(!muteSwitch.isChecked()));
+        gearBtn.setOnClickListener(v -> {
             soundPanelOpen = !soundPanelOpen;
             if (soundPanelOpen) {
                 soundPanel.setAlpha(0f);
@@ -271,6 +318,7 @@ public class MainActivity extends Activity {
         super.onResume();
         sound.resume();
         space.setRunning(true);
+        frame.setRunning(true);
         character.setRunning(true);
     }
 
@@ -281,6 +329,7 @@ public class MainActivity extends Activity {
         if (elim.isRunning()) elim.abort();
         sound.pause();
         space.setRunning(false);
+        frame.setRunning(false);
         character.setRunning(false);
     }
 

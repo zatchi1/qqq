@@ -179,17 +179,17 @@ final class DisplayView extends View {
         // the digit itself, as a little green creature: outlined glyph + eyes + stubby legs
         PixelFont.outlined(wc, p, s, pad, pad, u, ALIEN_FILL, ALIEN_EDGE);
         p.setStyle(Paint.Style.FILL);
-        float eyeU = Math.max(2f, u);
-        float ey = pad + 1.5f * u;
-        for (int i = 0; i < 2; i++) {
-            float ex = pad + (g.gw * u) * (i == 0 ? 0.18f : 0.62f);
-            p.setColor(0xFF14141E);
-            wc.drawRect(ex - eyeU * 0.5f, ey - eyeU * 0.5f, ex + eyeU * 2.0f, ey + eyeU * 2.5f, p);
-            p.setColor(0xFFFFFFFF);
-            wc.drawRect(ex, ey, ex + eyeU * 1.5f, ey + eyeU * 2f, p);
-            p.setColor(0xFF14141E);
-            wc.drawRect(ex + eyeU * 0.6f, ey + eyeU * 0.6f, ex + eyeU * 1.3f, ey + eyeU * 1.6f, p);
-        }
+        // cyan visor with a highlight, like the character, plus two little horns
+        float vx0 = pad + g.gw * u * 0.12f, vx1 = pad + g.gw * u * 0.98f, vy0 = pad + 1.2f * u, vy1 = pad + 3.6f * u;
+        p.setColor(0xFF14141E);
+        wc.drawRect(vx0 - u * 0.5f, vy0 - u * 0.5f, vx1 + u * 0.5f, vy1 + u * 0.5f, p);
+        p.setColor(0xFF59E0FF);
+        wc.drawRect(vx0, vy0, vx1, vy1, p);
+        p.setColor(0xFFFFFFFF);
+        wc.drawRect(vx0 + u * 0.4f, vy0 + u * 0.3f, vx0 + u * 1.6f, vy0 + u * 0.9f, p);
+        p.setColor(0xFF4A4A8C);
+        wc.drawRect(pad + u * 0.2f, pad - u * 1.2f, pad + u * 1.0f, pad, p);
+        wc.drawRect(pad + g.gw * u - u * 1.0f, pad - u * 1.2f, pad + g.gw * u - u * 0.2f, pad, p);
         float legTop = pad + FontData.HEIGHT * u + u * 0.4f;
         for (int i = 0; i < 2; i++) {
             float lx = pad + g.gw * u * (i == 0 ? 0.2f : 0.7f);
@@ -322,8 +322,26 @@ final class DisplayView extends View {
         float u = Math.max(2f, Math.round(density * 2f));
         p.setStyle(Paint.Style.FILL);
         steppedRect(c, 0, 0, w, h, u, 0xFF05050F);
-        steppedRect(c, u, u, w - u, h - u, u, 0xFF3CC9A6);
-        steppedRect(c, 2 * u, 2 * u, w - 2 * u, h - 2 * u, u, 0xFF03211D);
+        float glow = 0.5f + 0.5f * (float) Math.sin(SystemClock.uptimeMillis() / 700.0);
+        steppedRect(c, u, u, w - u, h - u, u, 0xFF2BE86A);
+        steppedRect(c, 2 * u, 2 * u, w - 2 * u, h - 2 * u, u, 0xFF0B3A2A);          // inner neon rim
+        steppedRect(c, 3 * u, 3 * u, w - 3 * u, h - 3 * u, u, 0xFF03140F);
+        p.setColor(0x6659FF8A);                                                      // pulsing rim light
+        p.setAlpha((int) (60 + 120 * glow));
+        c.drawRect(4 * u, 2 * u, w - 4 * u, 3 * u, p);
+        c.drawRect(4 * u, h - 3 * u, w - 4 * u, h - 2 * u, p);
+        p.setAlpha(255);
+        // twinkling four-point sparkles inside the glass
+        float[][] sp = {{0.07f, 0.28f, 0f}, {0.30f, 0.72f, 1.7f}, {0.46f, 0.30f, 3.1f}, {0.18f, 0.80f, 4.4f}};
+        for (float[] q : sp) {
+            float tw = 0.5f + 0.5f * (float) Math.sin(SystemClock.uptimeMillis() / 520.0 + q[2]);
+            float su = Math.max(2f, u * (0.8f + tw)), x = Math.round(w * q[0]), y = Math.round(h * q[1]);
+            p.setColor(0xFF59FF8A);
+            p.setAlpha((int) (80 + 175 * tw));
+            c.drawRect(x - su, y, x + 2 * su, y + su, p);
+            c.drawRect(x, y - su, x + su, y + 2 * su, p);
+            p.setAlpha(255);
+        }
         // scan lines
         p.setColor(0x1428FFC8);
         for (float y = 3 * u; y < h - 3 * u; y += 2 * u) c.drawRect(2 * u, y, w - 2 * u, y + u * 0.5f, p);

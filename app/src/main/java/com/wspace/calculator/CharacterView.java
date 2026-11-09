@@ -1,39 +1,51 @@
 package com.wspace.calculator;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.RectF;
 import android.view.View;
 
 import java.util.Random;
 
 /**
- * Transparent overlay on top of the keypad. The tiny character walks along the top edge of a key row
- * (swapping its feet), stops to stand around, jumps up or down to the neighbouring row, and hops when
- * a key is pressed. It never takes touches, so the keys underneath keep working.
+ * Transparent overlay (never takes touches) with two characters:
+ *  - the big one peeking over the top edge of the display, rocking gently, paws on the edge and a
+ *    blinking "!!" beside it (drawn from the uploaded picture);
+ *  - a tiny pixel one that floats weightlessly between the keys, drifting on a slow looping path,
+ *    tilting with its movement, leaving a trail of sparkles and hopping when a key is pressed.
  */
 final class CharacterView extends View {
 
-    private static final int WALK = 0, IDLE = 1, JUMP = 2;
+    private static final int TRAIL = 14;
 
     private final Paint p = new Paint();
+    private final Paint bmpP = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final RectF dst = new RectF();
     private final Random rnd = new Random();
     private final float density;
-    private final float s;                       // size of one sprite pixel in px
+    private final float s;                       // size of one tiny-sprite pixel in px
 
-    private float left, right;                   // horizontal range the character may roam
-    private float[] floors = new float[0];       // y of each row's top edge (feet stand here)
+    // area the tiny character floats in (the keypad)
+    private float aL, aT, aR, aB;
+    private boolean hasArea = false;
 
-    private int state = IDLE;
-    private int floor = 0;
-    private float x, y;
-    private float targetX, timer;
+    // peeking character
+    private Bitmap peek;
+    private float peekCx, peekTop, peekW;
+    private boolean hasPeek = false;
+
+    private float clock = 0f;
+    private float hopT = -1f;
+    private float fx, fy, prevFx, prevFy;
+    private float tilt = 0f;
     private boolean faceLeft = false;
-    private float stepClock = 0f;
 
-    private float jx0, jy0, jx1, jy1, jT, jDur, jHeight;
-    private float hopT = -1f;                    // reaction hop when a key is pressed
-    private float tongueClock = 0f;
+    private final float[] trX = new float[TRAIL], trY = new float[TRAIL], trLife = new float[TRAIL];
+    private int trNext = 0;
+    private float trTimer = 0f;
 
     private long lastNs = 0;
     private boolean running = true;
@@ -41,26 +53,29 @@ final class CharacterView extends View {
     CharacterView(Context ctx) {
         super(ctx);
         density = ctx.getResources().getDisplayMetrics().density;
-        s = Math.max(2f, Math.round(density * 1.3f));
+        s = Math.max(2f, Math.round(density * 1.5f));
         setClickable(false);
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inScaled = false;
+            peek = BitmapFactory.decodeResource(getResources(), R.drawable.peek_char, o);
+        } catch (Throwable ignored) {
+            peek = null;
+        }
     }
 
-    /** Called by the activity once the keypad has been laid out. */
-    void setStage(float l, float r, float[] floorYs) {
-        left = l + SpriteData.W * s / 2f;
-        right = r - SpriteData.W * s / 2f;
-        floors = floorYs;
-        if (floors.length == 0) return;
-        if (floor >= floors.length) floor = floors.length - 1;
-        if (state == IDLE && x == 0f) {                 // first layout: start on the second row
-            floor = Math.min(1, floors.length - 1);
-            x = left + (right - left) * 0.3f;
-            y = floors[floor];
-            timer = 0.8f;
-        } else if (state != JUMP) {
-            y = floors[floor];
-        }
-        x = Math.max(left, Math.min(right, x));
+    /** Keypad rectangle in this view's coordinates: the tiny character floats inside it. */
+    void setFloatArea(float l, float t, float r, float b) {
+        aL = l; aT = t; aR = r; aB = b;
+        hasArea = true;
+    }
+
+    /** The big character sits with its body behind the display; cx = centre, top = display's top edge. */
+    void setPeek(float cx, float displayTop, float width) {
+        peekCx = cx;
+        peekTop = displayTop;
+        peekW = width;
+        hasPeek = peek != null;
     }
 
     void setRunning(boolean r) {
@@ -71,75 +86,39 @@ final class CharacterView extends View {
         }
     }
 
-    /** A key was pressed: the character hops on the spot. */
+    /** A key was pressed: both characters hop. */
     void hop() { if (hopT < 0f) hopT = 0f; }
 
-    // ------------------------------------------------------------------ behaviour
-    private void chooseNext() {
-        if (floors.length == 0) return;
-        if (rnd.nextFloat() < 0.35f && floors.length > 1) {
-            int nf = floor + (rnd.nextBoolean() ? 1 : -1);
-            if (nf < 0) nf = 1;
-            if (nf >= floors.length) nf = floors.length - 2;
-            jx0 = x; jy0 = y;
-            jx1 = left + rnd.nextFloat() * (right - left);
-            jy1 = floors[nf];
-            jHeight = 34f * density;
-            jDur = 0.55f;
-            jT = 0f;
-            faceLeft = jx1 < jx0;
-            floor = nf;
-            state = JUMP;
-        } else {
-            float range = right - left;
-            float dist = range * (0.2f + rnd.nextFloat() * 0.5f);
-            targetX = x + (rnd.nextBoolean() ? dist : -dist);
-            if (targetX < left || targetX > right) targetX = x - (targetX - x);
-            targetX = Math.max(left, Math.min(right, targetX));
-            faceLeft = targetX < x;
-            state = WALK;
-        }
-    }
-
+    // ------------------------------------------------------------------ motion
     private void update(float dt) {
-        if (floors.length == 0) return;
-        tongueClock += dt;
+        clock += dt;
         if (hopT >= 0f) {
-            hopT += dt / 0.28f;
+            hopT += dt / 0.3f;
             if (hopT >= 1f) hopT = -1f;
         }
-        switch (state) {
-            case WALK: {
-                float speed = 52f * density;
-                float step = speed * dt;
-                float d = targetX - x;
-                stepClock += dt;
-                if (Math.abs(d) <= step) {
-                    x = targetX;
-                    state = IDLE;
-                    timer = 0.7f + rnd.nextFloat() * 1.8f;
-                } else {
-                    x += Math.signum(d) * step;
-                }
-                break;
-            }
-            case JUMP: {
-                jT += dt / jDur;
-                float k = Math.min(1f, jT);
-                x = jx0 + (jx1 - jx0) * k;
-                y = jy0 + (jy1 - jy0) * k - 4f * jHeight * k * (1f - k);
-                if (jT >= 1f) {
-                    x = jx1; y = jy1;
-                    state = IDLE;
-                    timer = 0.5f + rnd.nextFloat() * 1.2f;
-                }
-                break;
-            }
-            default: {
-                timer -= dt;
-                if (timer <= 0f) chooseNext();
+        if (hasArea) {
+            // two slow sines per axis = a lazy looping path that covers most of the keypad
+            float w = aR - aL, h = aB - aT;
+            float nx = 0.5f + 0.40f * (float) Math.sin(clock * 0.33f) + 0.10f * (float) Math.sin(clock * 0.91f + 1f);
+            float ny = 0.5f + 0.38f * (float) Math.sin(clock * 0.24f + 0.6f) + 0.10f * (float) Math.sin(clock * 0.67f);
+            prevFx = fx; prevFy = fy;
+            fx = aL + w * nx;
+            fy = aT + h * ny;
+            float vx = (fx - prevFx) / Math.max(dt, 0.001f);
+            if (Math.abs(vx) > 4f) faceLeft = vx < 0f;
+            float target = Math.max(-10f, Math.min(10f, vx * 0.05f));
+            tilt += (target - tilt) * Math.min(1f, dt * 4f);
+
+            trTimer -= dt;
+            if (trTimer <= 0f) {
+                trTimer = 0.07f;
+                trX[trNext] = fx + (rnd.nextFloat() - 0.5f) * s * 4f;
+                trY[trNext] = fy + (rnd.nextFloat() - 0.2f) * s * 5f;
+                trLife[trNext] = 1f;
+                trNext = (trNext + 1) % TRAIL;
             }
         }
+        for (int i = 0; i < TRAIL; i++) if (trLife[i] > 0f) trLife[i] -= dt * 1.1f;
     }
 
     // ------------------------------------------------------------------ drawing
@@ -150,25 +129,79 @@ final class CharacterView extends View {
         lastNs = now;
         if (running) update(dt);
 
-        if (floors.length > 0) {
-            float hop = hopT >= 0f ? 4f * 10f * density * hopT * (1f - hopT) : 0f;
-            int step;
-            float bob = 0f;
-            if (state == WALK) {
-                step = ((int) (stepClock / 0.16f)) % 2;
-                bob = step == 0 ? 0f : -s;                       // little bounce on every step
-            } else if (state == JUMP) {
-                step = 2;                                        // feet tucked: both lowered
-            } else {
-                step = 2;
-                bob = 0f;
-            }
-            // calm weightless float: a slow sine drift on top of whatever it is doing
-            float drift = (float) Math.sin(tongueClock * 2.3f) * s * 1.1f - s * 1.1f;
-            float top = y - (SpriteData.H + 2) * s - hop + bob + drift;
-            float lx = x - SpriteData.W * s / 2f;
-            Sprite.draw(c, p, Math.round(lx), Math.round(top), s, faceLeft, step);
-        }
+        if (hasPeek) drawPeek(c);
+        if (hasArea) drawFloater(c);
         if (running) postInvalidateOnAnimation();
+    }
+
+    private void drawFloater(Canvas c) {
+        p.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < TRAIL; i++) {                     // sparkle trail
+            if (trLife[i] <= 0f) continue;
+            int a = Math.max(0, Math.min(255, (int) (200 * trLife[i])));
+            p.setColor((i % 2 == 0 ? 0x008DFFB0 : 0x007DF9FF) | (a << 24));
+            float z = s * (0.6f + trLife[i]);
+            c.drawRect(trX[i], trY[i], trX[i] + z, trY[i] + z, p);
+        }
+        float hop = hopT >= 0f ? 4f * 10f * density * hopT * (1f - hopT) : 0f;
+        float bob = (float) Math.sin(clock * 2.1f) * s * 1.6f;
+        c.save();
+        c.translate(fx, fy - hop + bob);
+        c.rotate(tilt + (float) Math.sin(clock * 1.3f) * 3f);
+        // feet dangling (step 2), no walking: it drifts like it is weightless
+        Sprite.draw(c, p, Math.round(-SpriteData.W * s / 2f), Math.round(-SpriteData.H * s / 2f), s, faceLeft, 2);
+        c.restore();
+    }
+
+    private void drawPeek(Canvas c) {
+        float sc = peekW / peek.getWidth();
+        float bw = peek.getWidth() * sc, bh = peek.getHeight() * sc;
+        float rock = (float) Math.sin(clock * 1.1f);                      // gentle left-right rocking
+        float bob = (float) Math.sin(clock * 1.7f) * density * 3f;
+        float hopUp = hopT >= 0f ? 4f * 8f * density * hopT * (1f - hopT) : 0f;
+        float top = peekTop - bh * 0.62f + bob - hopUp;                   // ~62% of the body shows above the display
+
+        c.save();
+        c.clipRect(0f, 0f, getWidth(), peekTop + density * 3f);
+        c.rotate(rock * 2.4f, peekCx, peekTop);
+        dst.set(peekCx - bw / 2f, top, peekCx + bw / 2f, top + bh);
+        c.drawBitmap(peek, null, dst, bmpP);
+        c.restore();
+
+        // two paws gripping the edge of the display (they tap alternately)
+        float pu = Math.max(2f, Math.round(density * 2f));
+        float pawW = bw * 0.20f;
+        p.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 2; i++) {
+            float px = peekCx + (i == 0 ? -bw * 0.34f : bw * 0.26f) + rock * pu;
+            float lift = Math.max(0f, (float) Math.sin(clock * 2.6f + i * Math.PI)) * pu * 2f;
+            float y1 = peekTop + pu * 2f, y0 = y1 - pu * 7f - lift;
+            stepped(c, px - pawW / 2f - pu, y0 - pu, px + pawW / 2f + pu, y1 + pu, pu, 0xFF14141E);
+            stepped(c, px - pawW / 2f, y0, px + pawW / 2f, y1, pu, 0xFF92C673);
+            p.setColor(0xFF6FA855);
+            c.drawRect(px - pawW / 6f, y0 + pu, px - pawW / 6f + pu, y1 - pu, p);
+            c.drawRect(px + pawW / 6f, y0 + pu, px + pawW / 6f + pu, y1 - pu, p);
+        }
+
+        // yellow "!!" beside the head, blinking
+        if (((int) (clock * 3f)) % 3 != 2) {
+            float ex = peekCx + bw * 0.62f, ey = peekTop - bh * 0.42f + bob;
+            c.save();
+            c.translate(ex, ey);
+            c.rotate(-20f);
+            p.setColor(0xFF14141E);
+            c.drawRect(-pu * 2f, -pu * 8f, pu * 2.5f, pu * 3f, p);
+            c.drawRect(-pu * 2f, pu * 5f, pu * 2.5f, pu * 9f, p);
+            p.setColor(0xFFFFE23A);
+            c.drawRect(-pu, -pu * 7f, pu * 1.5f, pu * 2f, p);
+            c.drawRect(-pu, pu * 6f, pu * 1.5f, pu * 8f, p);
+            c.restore();
+        }
+    }
+
+    private void stepped(Canvas c, float l, float t, float r, float b, float u, int color) {
+        p.setColor(color);
+        c.drawRect(l + u, t, r - u, b, p);
+        c.drawRect(l, t + u, r, b - u, p);
     }
 }
