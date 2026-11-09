@@ -134,6 +134,17 @@ t = save_rgba(im, top, None, RES + '/drawable-nodpi/cut_top.png')
 bt = save_rgba(im, bot, None, RES + '/drawable-nodpi/cut_bottom.png')
 print('CUT_TOP  x,y,w,h =', t, ' CUT_BOTTOM x,y,w,h =', bt, ' source size =', (W, H))
 
+
+# ---------------------------------------------------------------- 4: the peeking character (flat grey background)
+pk = np.array(Image.open(ROOT + '/design/reference/4_peek_character.jpg').convert('RGB')).astype(int)
+bgc = np.median(pk[:8, :8].reshape(-1, 3), axis=0)
+pm = np.abs(pk - bgc).max(axis=2) > 28
+pm = ndi.binary_fill_holes(ndi.binary_closing(pm, iterations=2))
+pl, pn = ndi.label(pm)
+pm = pl == (1 + int(np.argmax(ndi.sum(pm, pl, index=np.arange(1, pn + 1)))))
+pm = ndi.binary_opening(pm, iterations=1)
+save_rgba(pk, pm, None, RES + '/drawable-nodpi/peek_char.png', pad=2, blur=0.7)
+
 # ---------------------------------------------------------------- audio
 RAW = RES + '/raw'
 for src_name, out_name in (('1_trrr', 'sfx_trrr'), ('2_kill', 'sfx_kill'), ('3_106', 'sfx_106')):
