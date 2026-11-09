@@ -2,9 +2,8 @@
 <resources>
     <style name="Theme.WSpace" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
-        <item name="android:windowFullscreen">true</item>
+        <!-- normal window: status bar and navigation bar stay visible (dark, to match the app) -->
         <item name="android:navigationBarColor">#02030A</item>
-        <item name="android:statusBarColor">@android:color/transparent</item>
-        <item name="android:windowLayoutInDisplayCutoutMode">shortEdges</item>
+        <item name="android:statusBarColor">#02030A</item>
     </style>
 </resources>

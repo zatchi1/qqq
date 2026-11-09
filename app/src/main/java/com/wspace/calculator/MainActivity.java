@@ -85,7 +85,9 @@ public class MainActivity extends Activity {
 
         // header: app name on the left (the sound button floats on the right)
         TitleView title = new TitleView(this);
-        column.addView(title, new LinearLayout.LayoutParams(-1, dp(88)));
+        // header is 88dp on normal phones and shrinks a little on short screens (the bars now take room)
+        int headerH = Math.min(dp(88), Math.round(getResources().getDisplayMetrics().heightPixels * 0.115f));
+        column.addView(title, new LinearLayout.LayoutParams(-1, headerH));
 
         panel = buildPanel();
         column.addView(panel, new LinearLayout.LayoutParams(-1, 0, 1f));
@@ -118,7 +120,14 @@ public class MainActivity extends Activity {
         character.setFloatArea(pl + dp(26), pt + dp(26), pl + pad.getWidth() - dp(26), pt + pad.getHeight() - dp(26));
         display.getLocationOnScreen(q);
         float w = character.getWidth();
-        character.setPeek(w * 0.56f, q[1] - o[1], w * 0.30f);
+        // The big character lives in the gap between the title (left) and the two round buttons (right),
+        // so it never lands on top of them, whatever the phone's width is.
+        float titleRight = dp(18) + 0.38f * (w - dp(20));
+        float buttonsLeft = w - dp(136);
+        float span = buttonsLeft - titleRight - dp(6);
+        float peekW = Math.max(dp(60), Math.min(w * 0.30f, span));
+        float peekCx = titleRight + dp(3) + Math.max(span, dp(60)) / 2f;
+        character.setPeek(peekCx, q[1] - o[1], peekW);
         int[] fo = new int[2];
         frame.getLocationOnScreen(fo);
         panel.getLocationOnScreen(q);
@@ -196,6 +205,14 @@ public class MainActivity extends Activity {
             float cu = Math.max(2f, Math.round(uB * 0.8f));
             float crownH = CROWN.length * cu;
             float total = crownH + FontData.HEIGHT * uB + FontData.HEIGHT * uS + uB * 1.2f;
+            if (total > getHeight() && getHeight() > 0) {          // short header: shrink the lettering to fit
+                float f = getHeight() / total;
+                uB = Math.max(2f, (float) Math.floor(uB * f));
+                uS = Math.max(2f, (float) Math.floor(uS * f));
+                cu = Math.max(2f, Math.round(uB * 0.8f));
+                crownH = CROWN.length * cu;
+                total = crownH + FontData.HEIGHT * uB + FontData.HEIGHT * uS + uB * 1.2f;
+            }
             float y0 = Math.max(0f, (getHeight() - total) / 2f);
 
             // crown over the right half of "W-SPACE", gently bobbing
