@@ -1,0 +1,70 @@
+name: Build zat (Windows)
+
+on:
+  push:
+    branches: [ zat-image-viewer ]
+    paths: [ 'zat-image-viewer/**', '.github/workflows/build-zat.yml' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            curl
+
+      - name: Fetch nanosvg (SVG support)
+        working-directory: zat-image-viewer
+        run: |
+          mkdir -p src/third_party
+          curl -fsSL -o src/third_party/nanosvg.h https://raw.githubusercontent.com/memononen/nanosvg/master/src/nanosvg.h
+          curl -fsSL -o src/third_party/nanosvgrast.h https://raw.githubusercontent.com/memononen/nanosvg/master/src/nanosvgrast.h
+
+      - name: Build zat.exe
+        working-directory: zat-image-viewer
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          mkdir -p dist
+          cp build/zat.exe dist/zat.exe
+          ls -la dist
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        working-directory: zat-image-viewer
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc installer\zat.iss
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zat-windows-x64
+          path: |
+            zat-image-viewer/dist/zat.exe
+            zat-image-viewer/dist/zat-setup.exe
+
+      - name: Publish release
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "zat-v1.0.0-build${{ github.run_number }}"
+          gh release create $tag zat-image-viewer/dist/zat.exe zat-image-viewer/dist/zat-setup.exe --title "zat Image Viewer build ${{ github.run_number }}" --notes "Windows x64 build produced by GitHub Actions." --target ${{ github.sha }}
