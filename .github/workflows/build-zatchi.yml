@@ -1,0 +1,70 @@
+name: Build zatchi (Windows)
+
+on:
+  push:
+    branches: [ zatchi ]
+    paths: [ 'zatchi/**', '.github/workflows/build-zatchi.yml' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+
+      - name: Generate games list from Discord's detectable games
+        working-directory: zatchi
+        run: |
+          python tools/gen_games.py
+          wc -l res/games.tsv
+          head -n 40 res/games.tsv
+
+      - name: Build zatchi.exe
+        working-directory: zatchi
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          mkdir -p dist
+          cp build/zatchi.exe dist/zatchi.exe
+          ls -la dist
+
+      - name: Build installer (Inno Setup)
+        shell: pwsh
+        working-directory: zatchi
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress }
+          & $iscc installer\zatchi.iss
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zatchi-windows-x64
+          path: |
+            zatchi/dist/zatchi.exe
+            zatchi/dist/zatchi-setup.exe
+            zatchi/res/games.tsv
+
+      - name: Publish release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "zatchi-v1.0.0-build${{ github.run_number }}"
+          gh release create $tag zatchi/dist/zatchi.exe zatchi/dist/zatchi-setup.exe --title "zatchi build ${{ github.run_number }}" --notes "Windows x64 build produced by GitHub Actions." --target ${{ github.sha }}

@@ -1,0 +1,145 @@
+# Popular games shown first (order = display order). Names must match Discord's game names.
+Fortnite
+Minecraft
+League of Legends
+VALORANT
+Counter-Strike 2
+Counter-Strike: Global Offensive
+Grand Theft Auto V
+Roblox
+Apex Legends
+Overwatch 2
+Overwatch
+Dota 2
+Rocket League
+Call of Duty: Warzone
+Call of Duty: Black Ops 6
+Call of Duty: Modern Warfare III
+Call of Duty: Modern Warfare II
+Call of Duty: Black Ops III
+Tom Clancy's Rainbow Six Siege
+Rainbow Six Siege
+PUBG: BATTLEGROUNDS
+Genshin Impact
+Honkai: Star Rail
+Zenless Zone Zero
+Wuthering Waves
+Marvel Rivals
+Delta Force
+Deadlock
+Zombie Army Trilogy
+Zombie Army 4: Dead War
+Elden Ring
+Cyberpunk 2077
+The Witcher 3: Wild Hunt
+Red Dead Redemption 2
+Baldur's Gate 3
+Black Myth: Wukong
+Helldivers 2
+Lethal Company
+Content Warning
+R.E.P.O.
+Phasmophobia
+Palworld
+Rust
+ARK: Survival Evolved
+Valheim
+Terraria
+Stardew Valley
+Among Us
+Fall Guys
+Dead by Daylight
+Project Zomboid
+7 Days to Die
+DayZ
+Escape from Tarkov
+Hunt: Showdown
+Sea of Thieves
+Destiny 2
+World of Warcraft
+Diablo IV
+Path of Exile
+Lost Ark
+New World
+Final Fantasy XIV
+Guild Wars 2
+Old School RuneScape
+RuneScape
+Warframe
+Brawlhalla
+Team Fortress 2
+Left 4 Dead 2
+Garry's Mod
+Half-Life 2
+Portal 2
+Hearthstone
+osu!
+Battlefield 2042
+Battlefield V
+Battlefield 1
+EA SPORTS FC 25
+EA SPORTS FC 24
+FIFA 23
+Forza Horizon 5
+Forza Horizon 4
+Need for Speed Unbound
+Assetto Corsa
+Euro Truck Simulator 2
+American Truck Simulator
+The Sims 4
+Cities: Skylines
+Satisfactory
+Factorio
+Subnautica
+No Man's Sky
+Raft
+The Forest
+Sons of the Forest
+Skyrim
+The Elder Scrolls V: Skyrim
+Starfield
+Fallout 76
+Fallout 4
+Monster Hunter: World
+Monster Hunter Wilds
+Street Fighter 6
+Tekken 8
+Mortal Kombat 1
+Dark Souls III
+Sekiro: Shadows Die Twice
+Resident Evil 4
+Resident Evil Village
+Dying Light 2
+Dying Light
+Far Cry 6
+Assassin's Creed Valhalla
+Assassin's Creed Odyssey
+Hogwarts Legacy
+God of War
+Marvel's Spider-Man Remastered
+The Last of Us Part I
+Halo Infinite
+Halo: The Master Chief Collection
+Gears 5
+Age of Empires II
+Age of Empires IV
+Sid Meier's Civilization VI
+Total War: WARHAMMER III
+War Thunder
+World of Tanks
+World of Warships
+Smite
+Paladins
+Payday 2
+PAYDAY 3
+Deep Rock Galactic
+Risk of Rain 2
+Hades
+Hollow Knight
+Celeste
+Cuphead
+Slay the Spire
+Vampire Survivors
+Dave the Diver
+Left 4 Dead
+Rainbow Six Extraction
