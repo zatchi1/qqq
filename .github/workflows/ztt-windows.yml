@@ -8,6 +8,9 @@ name: ztt Windows installer
 
 on:
   workflow_dispatch:
+  push:
+    branches: [add-ztt-windows-build]
+    paths: ['ztt/**', '.github/workflows/ztt-windows.yml']
 
 permissions:
   contents: read
