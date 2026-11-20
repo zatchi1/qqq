@@ -29,6 +29,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Free disk space
+        working-directory: .
         run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
       - uses: actions/checkout@v5
         with:
