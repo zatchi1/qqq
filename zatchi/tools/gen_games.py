@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Build res/games.tsv from Discord's public list of detectable games.
 
-Output columns (tab separated, UTF-8): name <TAB> windows executable <TAB> popularity rank (-1 = not popular)
+Output columns (tab separated, UTF-8): name, windows executable, popularity rank (-1 = not popular), launch arguments
 Popular games (data/popular.txt, in that order) come first, the rest alphabetical.
 """
 import json
@@ -56,12 +56,13 @@ def main():
                 continue
             c = clean_exe(e.get("name", ""))
             if c:
-                exes.append(c)
+                args = (e.get("arguments") or "").replace("\t", " ").replace("\n", " ").strip()
+                exes.append((c, args))
         if not exes:
             continue
-        # prefer a plain file name (no folder requirement) when several exist
-        exes.sort(key=lambda x: (x.count("/"), len(x)))
-        exe = exes[0]
+        # prefer entries without required launch arguments, then a plain file name (no folder requirement)
+        exes.sort(key=lambda x: (bool(x[1]), x[0].count("/"), len(x[0])))
+        exe, exe_args = exes[0]
         rank = pop_rank.get(name.lower(), -1)
         if rank < 0:
             for a in app.get("aliases") or []:
@@ -70,7 +71,7 @@ def main():
                     break
         key = (name.lower(), exe.lower())
         if key not in rows or rank >= 0:
-            rows[key] = (name, exe, rank)
+            rows[key] = (name, exe, rank, exe_args)
 
     items = list(rows.values())
     items.sort(key=lambda r: (0, r[2], r[0].lower()) if r[2] >= 0 else (1, 0, r[0].lower()))
@@ -78,8 +79,8 @@ def main():
     out = os.path.join(ROOT, "res", "games.tsv")
     os.makedirs(os.path.dirname(out), exist_ok=True)
     with open(out, "w", encoding="utf-8", newline="\n") as f:
-        for name, exe, rank in items:
-            f.write(f"{name}\t{exe}\t{rank}\n")
+        for name, exe, rank, exe_args in items:
+            f.write(f"{name}\t{exe}\t{rank}\t{exe_args}\n")
 
     matched = {r[2] for r in items if r[2] >= 0}
     missing = [n for i, n in enumerate(popular) if i not in matched]

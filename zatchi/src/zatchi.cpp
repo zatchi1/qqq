@@ -37,12 +37,12 @@ static const wchar_t* kMainClass = L"zatchiMainWindow";
 static const wchar_t* kStubClass = L"zatchiStubWindow";
 static const wchar_t* kMutexName = L"zatchi_single_instance_mutex";
 enum { WM_TRAY = WM_APP + 1 };
-enum { ID_SHOW = 1001, ID_STOP, ID_AUTO, ID_EXIT };
+enum { ID_SHOW = 1001, ID_STOP, ID_AUTO, ID_MIN, ID_EXIT };
 enum { T_TICK = 1 };
 enum { BTN_NONE = 0, BTN_PLAY, BTN_STOP };
 
 struct Game {
-    std::wstring name, exe, hay;
+    std::wstring name, exe, hay, args;
     int pop;
 };
 
@@ -144,6 +144,8 @@ static std::wstring RegGetStr(const wchar_t* sub, const wchar_t* name) {
 }
 static const wchar_t* kRunKey = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 static bool AutoStartEnabled() { return !RegGetStr(kRunKey, L"zatchi").empty(); }
+// "1" = the little game window is started minimized (default: shown normally, Discord may ignore hidden processes)
+static bool MinStub() { return RegGetStr(L"Software\\zatchi", L"MinimizeGameWindow") == L"1"; }
 static void SetAutoStart(bool on) {
     if (on) {
         RegSetStr(kRunKey, L"zatchi", L"\"" + SelfPath() + L"\" --background");
@@ -201,11 +203,15 @@ static void LoadGames() {
         while (t1 < l && p[t1] != '\t') t1++;
         size_t t2 = t1 + 1;
         while (t2 < l && p[t2] != '\t') t2++;
+        size_t t3 = t2 + 1;
+        while (t3 < l && p[t3] != '\t') t3++;
         if (t1 < l && t2 <= l) {
             Game g;
             g.name = Utf8ToW(p + i, t1 - i);
             g.exe = Utf8ToW(p + t1 + 1, t2 - t1 - 1);
-            g.pop = t2 < l ? atoi(std::string(p + t2 + 1, l - t2 - 1).c_str()) : -1;
+            size_t pe = t3 < l ? t3 : l;
+            g.pop = t2 < pe ? atoi(std::string(p + t2 + 1, pe - t2 - 1).c_str()) : -1;
+            if (t3 < l) g.args = Utf8ToW(p + t3 + 1, l - t3 - 1);
             g.hay = LowerW(g.name) + L"\n" + LowerW(g.exe);
             if (!g.name.empty() && !g.exe.empty()) g_games.push_back(std::move(g));
         }
@@ -341,6 +347,8 @@ static void StartPlaying(int gi) {
         return;
     }
     std::wstring cmd = L"\"" + target + L"\" --stub " + std::to_wstring(GetCurrentProcessId());
+    if (MinStub()) cmd += L" --min";
+    if (!g.args.empty()) cmd += L" " + g.args;  // some games are only detected with their own launch arguments
     STARTUPINFOW si = {sizeof(si)};
     PROCESS_INFORMATION pi = {};
     std::vector<wchar_t> cb(cmd.begin(), cmd.end());
@@ -419,6 +427,7 @@ static void TrayMenu() {
     }
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING | (AutoStartEnabled() ? MF_CHECKED : 0), ID_AUTO, L"Start with Windows");
+    AppendMenuW(m, MF_STRING | (MinStub() ? MF_CHECKED : 0), ID_MIN, L"Minimize the game window (next Play)");
     AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(m, MF_STRING, ID_EXIT, L"Exit");
     POINT pt;
@@ -431,6 +440,7 @@ static void TrayMenu() {
         case ID_SHOW: ShowMain(); break;
         case ID_STOP: StopPlaying(); break;
         case ID_AUTO: SetAutoStart(!AutoStartEnabled()); break;
+        case ID_MIN: RegSetStr(L"Software\\zatchi", L"MinimizeGameWindow", MinStub() ? L"0" : L"1"); break;
         case ID_EXIT: g_exiting = true; DestroyWindow(g_hwnd); break;
     }
 }
@@ -870,23 +880,66 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 }
 
 // ---------------------------------------------------------------- stub mode
-static LRESULT CALLBACK StubProc(HWND h, UINT m, WPARAM w, LPARAM l) { return DefWindowProcW(h, m, w, l); }
+static std::wstring g_stubText;
+static HFONT g_stubFont = nullptr;
+static HBRUSH g_stubBrush = nullptr;
 
-static int RunStub(DWORD parentPid, const wchar_t* self) {
+static LRESULT CALLBACK StubProc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+        case WM_PAINT: {
+            PAINTSTRUCT ps;
+            HDC dc = BeginPaint(h, &ps);
+            RECT rc;
+            GetClientRect(h, &rc);
+            FillRect(dc, &rc, g_stubBrush);
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, RGB(235, 237, 241));
+            HGDIOBJ old = SelectObject(dc, g_stubFont);
+            InflateRect(&rc, -S(14), -S(12));
+            DrawTextW(dc, g_stubText.c_str(), -1, &rc, DT_WORDBREAK | DT_NOPREFIX);
+            SelectObject(dc, old);
+            EndPaint(h, &ps);
+            return 0;
+        }
+        case WM_ERASEBKGND: return 1;
+        case WM_CLOSE: DestroyWindow(h); return 0;  // closing the window ends the "game"
+        case WM_DESTROY: PostQuitMessage(0); return 0;
+    }
+    return DefWindowProcW(h, m, w, l);
+}
+
+// The stub is a small but real, visible window: the official Discord client is stricter than
+// modified clients and may ignore processes that have no normal window.
+static int RunStub(DWORD parentPid, const wchar_t* self, bool minimized) {
     HANDLE hp = OpenProcess(SYNCHRONIZE, FALSE, parentPid);
     if (!hp) return 0;
+    g_dpi = QueryDpi(nullptr);
+    g_stubBrush = CreateSolidBrush(RGB(28, 30, 35));
+    g_stubFont = CreateFontW(-S(15), 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                             CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    const wchar_t* title = PathFindFileNameW(self);
+    g_stubText = std::wstring(L"zatchi is running as  ") + title + L"\r\n\r\nDiscord sees this process as a game. Close this window (or press Stop in zatchi) to end it.";
     WNDCLASSEXW wc = {sizeof(wc)};
     wc.lpfnWndProc = StubProc;
     wc.hInstance = GetModuleHandleW(nullptr);
+    wc.hIcon = LoadIconW(wc.hInstance, MAKEINTRESOURCEW(1));
+    wc.hIconSm = wc.hIcon;
+    wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
+    wc.hbrBackground = g_stubBrush;
     wc.lpszClassName = kStubClass;
     RegisterClassExW(&wc);
-    const wchar_t* title = PathFindFileNameW(self);
-    // a 1x1, almost transparent, click-through tool window: counts as a visible window but is never seen
-    HWND w = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE, kStubClass, title, WS_POPUP, 0, 0, 1, 1,
-                             nullptr, nullptr, wc.hInstance, nullptr);
+    DWORD style = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX;
+    RECT r = {0, 0, S(380), S(120)};
+    AdjustWindowRect(&r, style, FALSE);
+    int ww = r.right - r.left, wh = r.bottom - r.top;
+    RECT wa;
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &wa, 0);
+    HWND w = CreateWindowExW(0, kStubClass, title, style, wa.right - ww - S(16), wa.bottom - wh - S(16), ww, wh, nullptr, nullptr, wc.hInstance,
+                             nullptr);
     if (w) {
-        SetLayeredWindowAttributes(w, 0, 1, LWA_ALPHA);
-        ShowWindow(w, SW_SHOWNOACTIVATE);
+        DarkTitleBar(w);
+        ShowWindow(w, minimized ? SW_SHOWMINNOACTIVE : SW_SHOWNOACTIVATE);
+        UpdateWindow(w);
     }
     for (;;) {
         DWORD r = MsgWaitForMultipleObjects(1, &hp, FALSE, INFINITE, QS_ALLINPUT);
@@ -910,7 +963,10 @@ int WINAPI WinMain(HINSTANCE hInst, HINSTANCE, LPSTR, int) {
     bool background = false;
     for (int i = 1; argv && i < argc; i++) {
         if (lstrcmpiW(argv[i], L"--stub") == 0 && i + 1 < argc) {
-            int rc = RunStub((DWORD)_wtoi(argv[i + 1]), argv[0]);
+            bool minimized = false;
+            for (int k = i + 2; k < argc; k++)
+                if (lstrcmpiW(argv[k], L"--min") == 0) minimized = true;
+            int rc = RunStub((DWORD)_wtoi(argv[i + 1]), argv[0], minimized);
             LocalFree(argv);
             return rc;
         }

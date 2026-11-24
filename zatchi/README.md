@@ -23,6 +23,7 @@ Run `zatchi-setup.exe`, pick the install folder, optionally add a desktop shortc
 
 - Discord must be running and "Display current activity" enabled (Settings > Activity Privacy).
 - Discord sometimes takes a few seconds to pick the process up.
+- While playing, a small "game window" appears (it is the fake game process; the official Discord client may ignore processes with no window). Closing it stops the game. Tray menu > *Minimize the game window* starts it minimized instead.
 - Only one game at a time. Starting another stops the current one.
 - If a specific game is not detected, its entry in Discord's list may require something zatchi cannot imitate.
 
